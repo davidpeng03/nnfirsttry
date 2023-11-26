@@ -1,0 +1,172 @@
+
+import tensorflow.keras.callbacks as callbacks
+import tensorflow.keras as keras
+import tensorflow as tensorflow
+import numpy as np
+import awkward
+import uproot
+import h5py
+from utils import *
+
+
+
+# this should all be moved to a json config file...
+MASKVAL = -999
+MAXTRACKS = 32
+MAXCLUSTERS = 32
+BATCHSIZE = (32,1)
+EPOCHSIZE = 10000
+MAXEVENTS = 2000000
+# VALFACTOR = 3
+LR = 3e-4
+FNAME = "/Users/david/Downloads/jets.h5"
+
+#tracklayers = [ 16 , 16 , 16 , 16 ]
+#clusterlayers = [ 16 , 16 , 16 , 16 ]
+jetlayers = [ 16 , 16 , 16 , 16 ]
+
+evtfeatures = [ "eventNumber" ]
+truejetfeatures = [ "jet_true_pt" , "jet_true_eta" , "jet_true_phi" , "jet_true_e" ]
+jetfeatures = [ "jet_pt" , "jet_eta" , "jet_phi" , "jet_E" ]
+#trackfeatures = [ "jet_trk_pt" , "jet_trk_eta" , "jet_trk_phi" ]
+#clusterfeatures = [ "jet_constit_pt" , "jet_constit_eta" , "jet_constit_phi" ]
+
+'''
+#with uproot.open(FNAME) as t:
+with h5py.File(FNAME) as t:
+  print("reading in sample")
+  print(FNAME)
+  print()
+
+  # this reads in the entire file. needs to be upgraded eventually.
+  events = \
+    t.arrays \
+    ( expressions = \
+        evtfeatures
+      + truejetfeatures
+      + jetfeatures
+    )
+
+# not currently used... will use to build valid dataset eventually
+# trainmask = events["eventNumber"][:MAXEVENTS] % VALFACTOR != 0
+
+truejets = flatten1(events[truejetfeatures])
+jets = flatten1(events[jetfeatures])
+'''
+
+jets=h5py.File("/Users/david/Downloads/jets.h5","r") # reading the file
+# Extracting dataset values
+jet_pt = jets['jet_pt'][:]
+jet_px = jets['jet_px'][:]
+jet_py = jets['jet_py'][:]
+jet_pz = jets['jet_pz'][:]
+jet_E = jets['jet_E'][:]
+jet_true_pt = jets['jet_true_pt'][:]
+jet_true_px = jets['jet_true_px'][:]
+jet_true_py = jets['jet_true_py'][:]
+jet_true_pz = jets['jet_true_pz'][:]
+jet_true_E = jets['jet_true_e'][:]
+
+
+#phi = np.arctan2(jet_px,jet_py)
+#theta = np.arctan2(jet_px,jet_py)
+#pseudorapidity = -np.log(np.tan(theta/2))
+#jets = [jet_pt, pseudorapidity, phi]
+#jets = np.array(jets, dtype=np.float32)
+
+
+#truephi = np.arctan2(jet_true_px,jet_true_py)
+#truetheta = np.arctan2(jet_px,jet_py)
+#true_pseudorapidity = -np.log(np.tan(truetheta/2))
+#truejets = [jet_true_pt, true_pseudorapidity, truephi]
+
+
+#Data sets
+train_size = int(len(jet_pt) * 0.8)
+test_size = jet_pt - train_size
+train_input, test_input = jet_pt[:train_size], jet_pt[train_size:]
+train_output, test_output = jet_true_pt[:train_size], jet_true_pt[train_size:]
+
+
+
+
+from numpy.lib.recfunctions import structured_to_unstructured
+
+#tracks = ptetaphi2pxpypzV(structured_to_unstructured(tracks).to_numpy())
+#clusters = ptetaphi2pxpypzV(structured_to_unstructured(clusters).to_numpy())
+#jets = ptetaphi2pxpypz(structured_to_unstructured(jets).to_numpy())
+#truejets = ptetaphi2pxpypz(structured_to_unstructured(truejets).to_numpy())
+'''
+jets = [jet_px,jet_py,jet_pz,jet_E]
+jets = []
+jets.append(jet_px)
+jets.append(jet_py)
+jets.append(jet_pz)
+jets.append(jet_E)
+jests = np.array(jets)
+
+truejets = [jet_true_px,jet_true_py,jet_true_pz,jet_true_E]
+truejets = []
+truejets.append(jet_true_px)
+truejets.append(jet_true_py)
+truejets.append(jet_true_pz)
+truejets.append(jet_true_E)
+truejets = np.array(truejets)
+'''
+def loss_function(true_pt,pred):
+    loss = (pred - true_pt)**2
+    return loss
+
+model = \
+  buildModel \
+    ( [ len(jetfeatures) ] + jetlayers
+    , MASKVAL
+    )
+
+epoch = 0
+
+model.summary()
+
+model.compile \
+  ( loss = loss_function
+  , optimizer = keras.optimizers.Adam(learning_rate=LR)
+  )
+
+
+#print("regularizing")
+#tracks[numpy.isnan(tracks)] = MASKVAL
+#clusters[numpy.isnan(clusters)] = MASKVAL
+
+
+while 1:
+
+  print("plotting")
+  regressed = model.predict(train_input)
+  print("test1")
+#think this is wrong as the regresesd changed to just jets so might have to be [:,2] or something like that
+  reghists \
+    ( regressed[:,:4] 
+    , jets
+    , truejets
+    , epoch
+    )
+    
+    
+#[numpy.repeat(jets, 1000 )]
+#numpy.repeat(truejets, 1000)
+
+  print("epoch %03d" % epoch)
+  model.fit \
+    ( train_input
+    , train_output
+    , batch_size=BATCHSIZE
+    , epochs=1
+    , steps_per_epoch=EPOCHSIZE
+    , validation_data=(test_input, test_output)
+    # , validation_data=(valinputs, {"classification" : valclasstargets, "regression" : valkintargets })
+    # , callbacks=[callbacks.ReduceLROnPlateau(verbose=1)]
+    )
+
+  epoch += 1
+
+#   model.save("figs/model.k")
